@@ -17,6 +17,7 @@ locals {
   }
 
   has_rules = length(flatten([for bus in var.event_buses : bus.rules])) > 0
+  lambda_name = element(split("/", var.log_group_name), length(split("/", var.log_group_name)) - 1)
 }
 
 data "aws_caller_identity" "current" {}
@@ -169,7 +170,7 @@ resource "aws_cloudwatch_event_target" "targets" {
 resource "aws_cloudwatch_log_group" "eventbridge_logs" {
   count = var.enable_logging ? 1 : 0
 
-  name              = "/aws/lambda/eventbridge-default-logger"
+  name              = var.log_group_name != "" ? var.log_group_name : "/aws/lambda/eventbridge-default-logger"
   retention_in_days = var.log_retention_in_days
   kms_key_id        = var.enable_kms_cmk_encryption ? (var.kms_cmk_arn == "" ? aws_kms_key.eventbridge_cmk_key[0].arn : var.kms_cmk_arn) : null
 
@@ -178,7 +179,7 @@ resource "aws_cloudwatch_log_group" "eventbridge_logs" {
 
 resource "aws_lambda_function" "log_receiver" {
   count            = var.enable_logging && !local.has_rules ? 1 : 0
-  function_name    = "eventbridge-default-logger"
+  function_name    = var.log_group_name != "" ? local.lambda_name : "eventbridge-default-logger"
   role             = aws_iam_role.lambda_logger[0].arn
   handler          = "lambda_function.lambda_handler"
   runtime          = "python3.12"
@@ -320,6 +321,6 @@ resource "aws_kms_key" "eventbridge_cmk_key" {
 
 resource "aws_kms_alias" "eventbridge_key_alias" {
   count         = var.enable_kms_cmk_encryption ? (var.kms_cmk_arn == "" ? 1 : 0) : 0
-  name          = "alias/eventbridge-hub"
+  name_prefix   = "alias/${var.name_prefix}-eventbridge-hub"
   target_key_id = aws_kms_key.eventbridge_cmk_key[0].key_id
 }
